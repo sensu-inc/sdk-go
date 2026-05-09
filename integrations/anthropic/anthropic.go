@@ -1,19 +1,19 @@
-// Package anthropic provides a Senzu wrapper for the Anthropic Go SDK.
+// Package anthropic provides a Sensu wrapper for the Anthropic Go SDK.
 //
 // Usage:
 //
 //	import (
 //	    anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 //	    santhropicSDK "github.com/anthropics/anthropic-sdk-go/option"
-//	    santhropic "github.com/senzu-ai/sdk-go/integrations/anthropic"
-//	    "github.com/senzu-ai/sdk-go"
+//	    santhropic "github.com/sensu-inc/sdk-go/integrations/anthropic"
+//	    "github.com/sensu-inc/sdk-go"
 //	)
 //
-//	senzuClient := senzu.New(senzu.ClientOptions{FromEnv: true})
+//	sensuClient := sensu.New(sensu.ClientOptions{FromEnv: true})
 //	anthropicClient := anthropicSDK.NewClient()
-//	wrapped := santhropic.Wrap(anthropicClient, santhropic.WrapOptions{Client: senzuClient})
+//	wrapped := santhropic.Wrap(anthropicClient, santhropic.WrapOptions{Client: sensuClient})
 //
-//	// Inside a senzu.Run() callback, Messages.New is auto-tracked:
+//	// Inside a sensu.Run() callback, Messages.New is auto-tracked:
 //	resp, err := wrapped.Messages.New(ctx, params)
 package anthropic
 
@@ -23,22 +23,22 @@ import (
 
 	anthropicSDK "github.com/anthropics/anthropic-sdk-go"
 	"github.com/google/uuid"
-	"github.com/senzu-ai/sdk-go"
+	"github.com/sensu-inc/sdk-go"
 )
 
 // WrapOptions configures the Anthropic wrapper.
 type WrapOptions struct {
-	// Client is the Senzu client to emit events to. Required.
-	Client *senzu.SenzuClient
+	// Client is the Sensu client to emit events to. Required.
+	Client *sensu.SensuClient
 	// RunHandle pins this wrapper to an explicit run instead of resolving
 	// the run from context. Useful in environments without context propagation.
-	RunHandle *senzu.RunHandle
+	RunHandle *sensu.RunHandle
 	// DefaultProvider is used in telemetry events (default: "anthropic").
 	DefaultProvider string
 }
 
 // WrappedAnthropic is a thin proxy around *anthropicSDK.Client that
-// auto-tracks all Messages.New calls via the Senzu SDK.
+// auto-tracks all Messages.New calls via the Sensu SDK.
 //
 // Because Go does not allow monkey-patching method pointers, WrappedAnthropic
 // is a separate struct. It exposes a Messages field that mirrors the Anthropic
@@ -55,7 +55,7 @@ type WrappedMessages struct {
 }
 
 // Wrap wraps an *anthropicSDK.Client so that every Messages.New call is
-// automatically tracked as a Senzu LLM telemetry event.
+// automatically tracked as a Sensu LLM telemetry event.
 func Wrap(client *anthropicSDK.Client, opts WrapOptions) *WrappedAnthropic {
 	if opts.DefaultProvider == "" {
 		opts.DefaultProvider = "anthropic"
@@ -66,7 +66,7 @@ func Wrap(client *anthropicSDK.Client, opts WrapOptions) *WrappedAnthropic {
 }
 
 // New calls the underlying Anthropic Messages.New and emits
-// llm.request.started + llm.request.completed Senzu events.
+// llm.request.started + llm.request.completed Sensu events.
 //
 // Run resolution order (same as TS/Python integrations):
 //  1. opts.RunHandle — explicit; takes priority
@@ -91,7 +91,7 @@ func (m *WrappedMessages) New(ctx context.Context, params anthropicSDK.MessageNe
 	if run != nil {
 		startedEv := map[string]any{
 			"event_id":    uuid.New().String(),
-			"event_type":  senzu.EventLLMRequestStarted,
+			"event_type":  sensu.EventLLMRequestStarted,
 			"timestamp":   utcNow(),
 			"org_id":      c.OrgID(),
 			"agent_id":    c.AgentID(),
@@ -133,7 +133,7 @@ func (m *WrappedMessages) New(ctx context.Context, params anthropicSDK.MessageNe
 
 	completedEv := map[string]any{
 		"event_id":    uuid.New().String(),
-		"event_type":  senzu.EventLLMRequestCompleted,
+		"event_type":  sensu.EventLLMRequestCompleted,
 		"timestamp":   utcNow(),
 		"org_id":      c.OrgID(),
 		"agent_id":    c.AgentID(),

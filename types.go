@@ -1,6 +1,6 @@
-package senzu
+package sensu
 
-// ClientOptions configures a SenzuClient. All fields are optional;
+// ClientOptions configures a SensuClient. All fields are optional;
 // zero values fall back to defaults or environment variables when FromEnv is true.
 type ClientOptions struct {
 	APIKey             string

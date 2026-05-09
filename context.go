@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 import "context"
 
@@ -7,7 +7,7 @@ import "context"
 type contextKey struct{}
 
 // contextWithRun returns a new context that carries h.
-// Called by SenzuClient.Run() before invoking the user's function.
+// Called by SensuClient.Run() before invoking the user's function.
 func contextWithRun(ctx context.Context, h *RunHandle) context.Context {
 	return context.WithValue(ctx, contextKey{}, h)
 }

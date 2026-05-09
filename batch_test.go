@@ -1,4 +1,4 @@
-package senzu_test
+package sensu_test
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/senzu-ai/sdk-go"
+	"github.com/sensu-inc/sdk-go"
 )
 
 func TestFlushPostsEventsToServer(t *testing.T) {
@@ -31,7 +31,7 @@ func TestFlushPostsEventsToServer(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		APIKey:             "snz_test",
 		BaseURL:            ts.URL,
 		DisableLivePricing: true,
@@ -61,7 +61,7 @@ func TestBatchSizeTriggerFlushes(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		APIKey:          "snz_test",
 		BaseURL:         ts.URL,
 		BatchSize:       3,
@@ -88,7 +88,7 @@ func TestFlushReturnsErrorOnServerFailure(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		APIKey:          "snz_test",
 		BaseURL:         ts.URL,
 		FlushIntervalMs: 999_999,
@@ -111,7 +111,7 @@ func TestDisabledClientSkipsHTTP(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		APIKey:    "snz_test",
 		BaseURL:   ts.URL,
 		Disabled:  true,
@@ -142,7 +142,7 @@ func TestFlushContextCancellation(t *testing.T) {
 		ts.Close()
 	}()
 
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		APIKey:          "snz_test",
 		BaseURL:         ts.URL,
 		FlushIntervalMs: 999_999,

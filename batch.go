@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 import (
 	"bytes"
@@ -64,7 +64,7 @@ func (b *batcher) enqueue(ev telemetryEvent) {
 		return
 	}
 	if b.debugMode {
-		log.Printf("[senzu] %s", formatDebugEvent(ev))
+		log.Printf("[sensu] %s", formatDebugEvent(ev))
 	}
 	select {
 	case b.ch <- ev:
@@ -167,7 +167,7 @@ func (b *batcher) sendBackground(events []telemetryEvent) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := b.sendWithContext(ctx, events); err != nil {
-		log.Printf("[senzu:sdk] flush error: %v", err)
+		log.Printf("[sensu:sdk] flush error: %v", err)
 		for i := len(events) - 1; i >= 0; i-- {
 			select {
 			case b.ch <- events[i]:
@@ -181,25 +181,25 @@ func (b *batcher) sendWithContext(ctx context.Context, events []telemetryEvent) 
 	payload := map[string]any{"events": events}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("senzu: marshal events: %w", err)
+		return fmt.Errorf("sensu: marshal events: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		b.baseURL+"/api/v1/events", bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("senzu: build request: %w", err)
+		return fmt.Errorf("sensu: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-API-Key", b.apiKey)
 
 	resp, err := b.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("senzu: send events: %w", err)
+		return fmt.Errorf("sensu: send events: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("senzu: server returned %d", resp.StatusCode)
+		return fmt.Errorf("sensu: server returned %d", resp.StatusCode)
 	}
 	return nil
 }

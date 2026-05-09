@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 // StepHandle represents a single step within an agent run.
 // Created by RunHandle.StartStep(); ended by calling End().
 type StepHandle struct {
-	client    *SenzuClient
+	client    *SensuClient
 	StepID    string
 	RunID     string
 	SessionID string

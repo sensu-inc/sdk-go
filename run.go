@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 )
 
 // RunHandle represents a single agent run.
-// Created by SenzuClient.StartRun() or SenzuClient.Run(); ended by End().
+// Created by SensuClient.StartRun() or SensuClient.Run(); ended by End().
 type RunHandle struct {
-	client    *SenzuClient
+	client    *SensuClient
 	RunID     string
 	SessionID string
 	AgentID   string

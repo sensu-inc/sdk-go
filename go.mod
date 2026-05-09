@@ -1,4 +1,4 @@
-module github.com/senzu-ai/sdk-go
+module github.com/sensu-inc/sdk-go
 
 go 1.24
 

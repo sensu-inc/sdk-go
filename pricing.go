@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 import (
 	"context"

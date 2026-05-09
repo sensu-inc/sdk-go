@@ -1,4 +1,4 @@
-package senzu_test
+package sensu_test
 
 import (
 	"context"
@@ -11,17 +11,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/senzu-ai/sdk-go"
+	"github.com/sensu-inc/sdk-go"
 )
 
 // makeClient returns a disabled test client that never POSTs events.
-func makeClient() *senzu.SenzuClient {
-	return senzu.NewClient(senzu.ClientOptions{Disabled: true})
+func makeClient() *sensu.SensuClient {
+	return sensu.NewClient(sensu.ClientOptions{Disabled: true})
 }
 
 // makeClientWithServer returns a client wired to a test HTTP server.
 // The server records every batch received and responds 200 OK.
-func makeClientWithServer(t *testing.T) (*senzu.SenzuClient, *[][]map[string]any, *httptest.Server) {
+func makeClientWithServer(t *testing.T) (*sensu.SensuClient, *[][]map[string]any, *httptest.Server) {
 	t.Helper()
 	var mu sync.Mutex
 	var batches [][]map[string]any
@@ -41,7 +41,7 @@ func makeClientWithServer(t *testing.T) (*senzu.SenzuClient, *[][]map[string]any
 		json.NewEncoder(w).Encode(map[string]any{"processed": len(body.Events)})
 	}))
 
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		APIKey:             "test-key",
 		BaseURL:            ts.URL,
 		AgentID:            "test-agent",
@@ -87,7 +87,7 @@ func TestDisabledClientDropsAllEvents(t *testing.T) {
 }
 
 func TestNewClientDefaults(t *testing.T) {
-	c := senzu.NewClient(senzu.ClientOptions{})
+	c := sensu.NewClient(sensu.ClientOptions{})
 	if c.AgentID() != "unknown-agent" {
 		t.Fatalf("expected default agentID 'unknown-agent', got %q", c.AgentID())
 	}
@@ -99,7 +99,7 @@ func TestStartRunEmitsRunStarted(t *testing.T) {
 	defer c.Close(context.Background())
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{RunID: "run-1", SessionID: "sess-1"})
+	run := c.StartRun(sensu.StartRunOptions{RunID: "run-1", SessionID: "sess-1"})
 	if run.RunID != "run-1" {
 		t.Fatalf("expected run-1, got %s", run.RunID)
 	}
@@ -107,7 +107,7 @@ func TestStartRunEmitsRunStarted(t *testing.T) {
 	c.Flush(ctx)
 
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventRunStarted) {
+	if !containsType(events, sensu.EventRunStarted) {
 		t.Fatalf("expected agent.run.started in %v", eventTypes(events))
 	}
 }
@@ -117,7 +117,7 @@ func TestRunEmitsStartedAndCompleted(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	err := c.Run(ctx, senzu.StartRunOptions{}, func(ctx context.Context, run *senzu.RunHandle) error {
+	err := c.Run(ctx, sensu.StartRunOptions{}, func(ctx context.Context, run *sensu.RunHandle) error {
 		return nil
 	})
 	if err != nil {
@@ -126,10 +126,10 @@ func TestRunEmitsStartedAndCompleted(t *testing.T) {
 
 	events := allEvents(*batches)
 	types := eventTypes(events)
-	if !containsType(events, senzu.EventRunStarted) {
+	if !containsType(events, sensu.EventRunStarted) {
 		t.Fatalf("missing agent.run.started in %v", types)
 	}
-	if !containsType(events, senzu.EventRunCompleted) {
+	if !containsType(events, sensu.EventRunCompleted) {
 		t.Fatalf("missing agent.run.completed in %v", types)
 	}
 }
@@ -139,7 +139,7 @@ func TestRunEmitsFailedOnError(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	err := c.Run(ctx, senzu.StartRunOptions{}, func(ctx context.Context, run *senzu.RunHandle) error {
+	err := c.Run(ctx, sensu.StartRunOptions{}, func(ctx context.Context, run *sensu.RunHandle) error {
 		return fmt.Errorf("something failed")
 	})
 	if err == nil {
@@ -147,7 +147,7 @@ func TestRunEmitsFailedOnError(t *testing.T) {
 	}
 
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventRunFailed) {
+	if !containsType(events, sensu.EventRunFailed) {
 		t.Fatalf("missing agent.run.failed in %v", eventTypes(events))
 	}
 }
@@ -155,8 +155,8 @@ func TestRunEmitsFailedOnError(t *testing.T) {
 func TestContextPropagation(t *testing.T) {
 	c := makeClient()
 
-	var capturedRun *senzu.RunHandle
-	c.Run(context.Background(), senzu.StartRunOptions{}, func(ctx context.Context, run *senzu.RunHandle) error {
+	var capturedRun *sensu.RunHandle
+	c.Run(context.Background(), sensu.StartRunOptions{}, func(ctx context.Context, run *sensu.RunHandle) error {
 		capturedRun = c.GetActiveRun(ctx)
 		return nil
 	})
@@ -178,8 +178,8 @@ func TestContextIsolationAcrossConcurrentRuns(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			runID := fmt.Sprintf("run-%d", i)
-			c.Run(context.Background(), senzu.StartRunOptions{RunID: runID},
-				func(ctx context.Context, run *senzu.RunHandle) error {
+			c.Run(context.Background(), sensu.StartRunOptions{RunID: runID},
+				func(ctx context.Context, run *sensu.RunHandle) error {
 					// Simulate async work with random sleep
 					time.Sleep(time.Duration(rand.Intn(5)) * time.Millisecond)
 					active := c.GetActiveRun(ctx)
@@ -212,7 +212,7 @@ func TestRunIdempotentEnd(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
 	run.End(ctx, "completed")
 	run.End(ctx, "completed") // second call should be a no-op
 
@@ -220,7 +220,7 @@ func TestRunIdempotentEnd(t *testing.T) {
 
 	var completedCount int
 	for _, e := range allEvents(*batches) {
-		if e["event_type"] == senzu.EventRunCompleted {
+		if e["event_type"] == sensu.EventRunCompleted {
 			completedCount++
 		}
 	}
@@ -232,7 +232,7 @@ func TestRunIdempotentEnd(t *testing.T) {
 func TestLoopDetection(t *testing.T) {
 	var loopTool string
 	var loopCount int
-	c := senzu.NewClient(senzu.ClientOptions{
+	c := sensu.NewClient(sensu.ClientOptions{
 		Disabled:      true,
 		LoopThreshold: 3,
 		OnLoopDetected: func(toolName string, callCount int) {
@@ -241,13 +241,13 @@ func TestLoopDetection(t *testing.T) {
 		},
 	})
 
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 
 	for i := 0; i < 5; i++ {
-		senzu.TrackTool(context.Background(), step, func() (string, error) {
+		sensu.TrackTool(context.Background(), step, func() (string, error) {
 			return "ok", nil
-		}, senzu.TrackToolOptions{ToolName: "search"})
+		}, sensu.TrackToolOptions{ToolName: "search"})
 	}
 
 	if loopTool != "search" {
@@ -263,16 +263,16 @@ func TestStartStepEmitsStepStarted(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{Name: "my-step", StepType: "llm"})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{Name: "my-step", StepType: "llm"})
 	step.End(ctx)
 	c.Flush(ctx)
 
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventStepStarted) {
+	if !containsType(events, sensu.EventStepStarted) {
 		t.Fatalf("missing agent.step.started in %v", eventTypes(events))
 	}
-	if !containsType(events, senzu.EventStepCompleted) {
+	if !containsType(events, sensu.EventStepCompleted) {
 		t.Fatalf("missing agent.step.completed in %v", eventTypes(events))
 	}
 }
@@ -282,14 +282,14 @@ func TestTrackToolEmitsEvents(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	c.Flush(ctx)
 	*batches = nil // clear setup events
 
-	result, err := senzu.TrackTool(ctx, step, func() (string, error) {
+	result, err := sensu.TrackTool(ctx, step, func() (string, error) {
 		return "found", nil
-	}, senzu.TrackToolOptions{ToolName: "web_search"})
+	}, sensu.TrackToolOptions{ToolName: "web_search"})
 
 	if err != nil {
 		t.Fatal(err)
@@ -300,10 +300,10 @@ func TestTrackToolEmitsEvents(t *testing.T) {
 
 	c.Flush(ctx)
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventToolCallStarted) {
+	if !containsType(events, sensu.EventToolCallStarted) {
 		t.Fatalf("missing tool.call.started in %v", eventTypes(events))
 	}
-	if !containsType(events, senzu.EventToolCallCompleted) {
+	if !containsType(events, sensu.EventToolCallCompleted) {
 		t.Fatalf("missing tool.call.completed in %v", eventTypes(events))
 	}
 }
@@ -313,12 +313,12 @@ func TestTrackToolErrorSetsStatusError(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 
-	_, err := senzu.TrackTool(ctx, step, func() (string, error) {
+	_, err := sensu.TrackTool(ctx, step, func() (string, error) {
 		return "", fmt.Errorf("tool blew up")
-	}, senzu.TrackToolOptions{ToolName: "failing_tool"})
+	}, sensu.TrackToolOptions{ToolName: "failing_tool"})
 
 	if err == nil {
 		t.Fatal("expected error from TrackTool")
@@ -326,7 +326,7 @@ func TestTrackToolErrorSetsStatusError(t *testing.T) {
 
 	c.Flush(ctx)
 	for _, e := range allEvents(*batches) {
-		if e["event_type"] == senzu.EventToolCallCompleted {
+		if e["event_type"] == sensu.EventToolCallCompleted {
 			if e["status"] != "error" {
 				t.Fatalf("expected status=error, got %v", e["status"])
 			}
@@ -341,8 +341,8 @@ func TestSpawnRunEmitsAgentSpawned(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	parent := c.StartRun(senzu.StartRunOptions{RunID: "parent-run"})
-	child := c.SpawnRun(ctx, parent, senzu.SpawnRunOptions{
+	parent := c.StartRun(sensu.StartRunOptions{RunID: "parent-run"})
+	child := c.SpawnRun(ctx, parent, sensu.SpawnRunOptions{
 		ChildAgentID: "child-agent",
 		SpawnReason:  "subtask",
 	})
@@ -356,7 +356,7 @@ func TestSpawnRunEmitsAgentSpawned(t *testing.T) {
 
 	c.Flush(ctx)
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventAgentSpawned) {
+	if !containsType(events, sensu.EventAgentSpawned) {
 		t.Fatalf("missing agent.spawned in %v", eventTypes(events))
 	}
 }
@@ -366,16 +366,16 @@ func TestRecordFeedback(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
 	score := 0.9
-	run.RecordFeedback(senzu.RecordFeedbackOptions{
+	run.RecordFeedback(sensu.RecordFeedbackOptions{
 		Type:  "score",
 		Score: &score,
 	})
 	c.Flush(ctx)
 
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventFeedbackReceived) {
+	if !containsType(events, sensu.EventFeedbackReceived) {
 		t.Fatalf("missing feedback.received in %v", eventTypes(events))
 	}
 }

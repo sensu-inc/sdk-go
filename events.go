@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 // Event type constants — mirror EventTypeSchema in packages/shared/src/schemas.ts.
 const (

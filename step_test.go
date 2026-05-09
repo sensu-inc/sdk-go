@@ -1,4 +1,4 @@
-package senzu_test
+package sensu_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/senzu-ai/sdk-go"
+	"github.com/sensu-inc/sdk-go"
 )
 
 func TestTrackLLMEmitsStartedAndCompleted(t *testing.T) {
@@ -14,8 +14,8 @@ func TestTrackLLMEmitsStartedAndCompleted(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{StepType: "llm"})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{StepType: "llm"})
 	*batches = nil
 
 	type fakeResponse struct {
@@ -28,9 +28,9 @@ func TestTrackLLMEmitsStartedAndCompleted(t *testing.T) {
 	fake.Usage.InputTokens = 100
 	fake.Usage.OutputTokens = 50
 
-	result, err := senzu.TrackLLM(ctx, step, func() (*fakeResponse, error) {
+	result, err := sensu.TrackLLM(ctx, step, func() (*fakeResponse, error) {
 		return fake, nil
-	}, senzu.TrackLLMOptions{Provider: "anthropic", Model: "claude-sonnet-4-6"})
+	}, sensu.TrackLLMOptions{Provider: "anthropic", Model: "claude-sonnet-4-6"})
 
 	if err != nil {
 		t.Fatal(err)
@@ -42,15 +42,15 @@ func TestTrackLLMEmitsStartedAndCompleted(t *testing.T) {
 	c.Flush(ctx)
 	events := allEvents(*batches)
 
-	if !containsType(events, senzu.EventLLMRequestStarted) {
+	if !containsType(events, sensu.EventLLMRequestStarted) {
 		t.Fatalf("missing llm.request.started in %v", eventTypes(events))
 	}
-	if !containsType(events, senzu.EventLLMRequestCompleted) {
+	if !containsType(events, sensu.EventLLMRequestCompleted) {
 		t.Fatalf("missing llm.request.completed in %v", eventTypes(events))
 	}
 
 	for _, e := range events {
-		if e["event_type"] == senzu.EventLLMRequestCompleted {
+		if e["event_type"] == sensu.EventLLMRequestCompleted {
 			if e["status"] != "success" {
 				t.Fatalf("expected status=success, got %v", e["status"])
 			}
@@ -72,13 +72,13 @@ func TestTrackLLMErrorSetsStatusError(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	*batches = nil
 
-	_, err := senzu.TrackLLM(ctx, step, func() (any, error) {
+	_, err := sensu.TrackLLM(ctx, step, func() (any, error) {
 		return nil, fmt.Errorf("rate limited")
-	}, senzu.TrackLLMOptions{Provider: "openai", Model: "gpt-4o"})
+	}, sensu.TrackLLMOptions{Provider: "openai", Model: "gpt-4o"})
 
 	if err == nil {
 		t.Fatal("expected error")
@@ -86,7 +86,7 @@ func TestTrackLLMErrorSetsStatusError(t *testing.T) {
 
 	c.Flush(ctx)
 	for _, e := range allEvents(*batches) {
-		if e["event_type"] == senzu.EventLLMRequestCompleted {
+		if e["event_type"] == sensu.EventLLMRequestCompleted {
 			if e["status"] != "error" {
 				t.Fatalf("expected status=error, got %v", e["status"])
 			}
@@ -101,8 +101,8 @@ func TestTrackLLMCostEstimation(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	*batches = nil
 
 	type fakeResponse struct {
@@ -115,15 +115,15 @@ func TestTrackLLMCostEstimation(t *testing.T) {
 	fake.Usage.InputTokens = 1_000_000
 	fake.Usage.OutputTokens = 1_000_000
 
-	senzu.TrackLLM(ctx, step, func() (*fakeResponse, error) {
+	sensu.TrackLLM(ctx, step, func() (*fakeResponse, error) {
 		return fake, nil
-	}, senzu.TrackLLMOptions{Provider: "anthropic", Model: "claude-sonnet-4-6"})
+	}, sensu.TrackLLMOptions{Provider: "anthropic", Model: "claude-sonnet-4-6"})
 
 	c.Flush(ctx)
 
 	// claude-sonnet-4-6: $3/1M input + $15/1M output = $18 total
 	for _, e := range allEvents(*batches) {
-		if e["event_type"] == senzu.EventLLMRequestCompleted {
+		if e["event_type"] == sensu.EventLLMRequestCompleted {
 			cost, ok := e["cost_usd_estimate"].(float64)
 			if !ok {
 				t.Fatalf("expected cost_usd_estimate float64, got %T", e["cost_usd_estimate"])
@@ -142,13 +142,13 @@ func TestTrackGuardrailEmitsEvents(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	*batches = nil
 
-	result, err := senzu.TrackGuardrail(ctx, step, func() (string, error) {
+	result, err := sensu.TrackGuardrail(ctx, step, func() (string, error) {
 		return "pass", nil
-	}, senzu.TrackGuardrailOptions{GuardrailID: "g1", GuardrailType: "content"})
+	}, sensu.TrackGuardrailOptions{GuardrailID: "g1", GuardrailType: "content"})
 
 	if err != nil {
 		t.Fatal(err)
@@ -160,10 +160,10 @@ func TestTrackGuardrailEmitsEvents(t *testing.T) {
 	c.Flush(ctx)
 	events := allEvents(*batches)
 
-	if !containsType(events, senzu.EventGuardrailCheckStarted) {
+	if !containsType(events, sensu.EventGuardrailCheckStarted) {
 		t.Fatalf("missing guardrail.check.started in %v", eventTypes(events))
 	}
-	if !containsType(events, senzu.EventGuardrailCheckCompleted) {
+	if !containsType(events, sensu.EventGuardrailCheckCompleted) {
 		t.Fatalf("missing guardrail.check.completed in %v", eventTypes(events))
 	}
 }
@@ -173,17 +173,17 @@ func TestTrackGuardrailEmitsBlockedOnFail(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	*batches = nil
 
-	senzu.TrackGuardrail(ctx, step, func() (string, error) {
+	sensu.TrackGuardrail(ctx, step, func() (string, error) {
 		return "fail", nil
-	}, senzu.TrackGuardrailOptions{GuardrailID: "g1", GuardrailType: "pii"})
+	}, sensu.TrackGuardrailOptions{GuardrailID: "g1", GuardrailType: "pii"})
 
 	c.Flush(ctx)
 
-	if !containsType(allEvents(*batches), senzu.EventGuardrailBlocked) {
+	if !containsType(allEvents(*batches), sensu.EventGuardrailBlocked) {
 		t.Fatal("expected guardrail.blocked event when result is 'fail'")
 	}
 }
@@ -193,8 +193,8 @@ func TestTrackStreamingLLMMeasuresTTFT(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	*batches = nil
 
 	streamCh := make(chan string, 5)
@@ -207,7 +207,7 @@ func TestTrackStreamingLLMMeasuresTTFT(t *testing.T) {
 	}()
 
 	var gotTTFT bool
-	text, err := senzu.TrackStreamingLLM(ctx, step, streamCh, senzu.TrackStreamingLLMOptions{
+	text, err := sensu.TrackStreamingLLM(ctx, step, streamCh, sensu.TrackStreamingLLMOptions{
 		Provider: "anthropic",
 		Model:    "claude-sonnet-4-6",
 		OnComplete: func(t string, ttftMs *float64) {
@@ -229,7 +229,7 @@ func TestTrackStreamingLLMMeasuresTTFT(t *testing.T) {
 
 	c.Flush(ctx)
 	events := allEvents(*batches)
-	if !containsType(events, senzu.EventLLMRequestCompleted) {
+	if !containsType(events, sensu.EventLLMRequestCompleted) {
 		t.Fatalf("missing llm.request.completed after streaming in %v", eventTypes(events))
 	}
 }
@@ -239,13 +239,13 @@ func TestRecordRetrievalEmitsEvent(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	step := run.StartStep(senzu.StartStepOptions{})
+	run := c.StartRun(sensu.StartRunOptions{})
+	step := run.StartStep(sensu.StartStepOptions{})
 	*batches = nil
 
 	topK := 5
 	latency := 42.0
-	step.RecordRetrieval(senzu.RecordRetrievalOptions{
+	step.RecordRetrieval(sensu.RecordRetrievalOptions{
 		VectorStoreID: "store-1",
 		TopK:          &topK,
 		LatencyMs:     &latency,
@@ -254,7 +254,7 @@ func TestRecordRetrievalEmitsEvent(t *testing.T) {
 
 	c.Flush(ctx)
 
-	if !containsType(allEvents(*batches), senzu.EventRetrievalCompleted) {
+	if !containsType(allEvents(*batches), sensu.EventRetrievalCompleted) {
 		t.Fatal("missing retrieval.completed event")
 	}
 }
@@ -264,14 +264,14 @@ func TestRecordEvalScore(t *testing.T) {
 	defer ts.Close()
 
 	ctx := context.Background()
-	run := c.StartRun(senzu.StartRunOptions{})
-	run.RecordEvalScore(senzu.RecordEvalScoreOptions{
+	run := c.StartRun(sensu.StartRunOptions{})
+	run.RecordEvalScore(sensu.RecordEvalScoreOptions{
 		Metric: "faithfulness",
 		Score:  0.95,
 	})
 	c.Flush(ctx)
 
-	if !containsType(allEvents(*batches), senzu.EventEvalScoreRecorded) {
+	if !containsType(allEvents(*batches), sensu.EventEvalScoreRecorded) {
 		t.Fatal("missing eval.score.recorded event")
 	}
 }

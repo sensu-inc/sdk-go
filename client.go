@@ -1,4 +1,4 @@
-package senzu
+package sensu
 
 import (
 	"context"
@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// SenzuClient is the main entry point for Senzu AI observability telemetry.
-type SenzuClient struct {
+// SensuClient is the main entry point for Sensu AI observability telemetry.
+type SensuClient struct {
 	apiKey             string
 	baseURL            string
 	agentID            string
@@ -31,10 +31,10 @@ type SenzuClient struct {
 	runToolCallCounts map[string]map[string]int
 }
 
-// NewClient creates a SenzuClient. All fields in opts are optional.
+// NewClient creates a SensuClient. All fields in opts are optional.
 // When FromEnv is true, SENZU_API_KEY, SENZU_BASE_URL, SENZU_AGENT_ID, and
 // SENZU_ORG_ID are read from the environment.
-func NewClient(opts ClientOptions) *SenzuClient {
+func NewClient(opts ClientOptions) *SensuClient {
 	apiKey := opts.APIKey
 	baseURL := opts.BaseURL
 	agentID := opts.AgentID
@@ -75,7 +75,7 @@ func NewClient(opts ClientOptions) *SenzuClient {
 		loopThreshold = 5
 	}
 
-	c := &SenzuClient{
+	c := &SensuClient{
 		apiKey:             apiKey,
 		baseURL:            baseURL,
 		agentID:            agentID,
@@ -95,10 +95,10 @@ func NewClient(opts ClientOptions) *SenzuClient {
 }
 
 // AgentID returns the configured agent ID.
-func (c *SenzuClient) AgentID() string { return c.agentID }
+func (c *SensuClient) AgentID() string { return c.agentID }
 
 // OrgID returns the configured org ID.
-func (c *SenzuClient) OrgID() string { return c.orgID }
+func (c *SensuClient) OrgID() string { return c.orgID }
 
 // Run is the high-level context-propagating wrapper. It:
 //  1. Creates a RunHandle and emits agent.run.started
@@ -108,7 +108,7 @@ func (c *SenzuClient) OrgID() string { return c.orgID }
 //
 // This is the Go equivalent of sensu.run() with AsyncLocalStorage (TS) and
 // the `async with client.run()` context manager (Python).
-func (c *SenzuClient) Run(ctx context.Context, opts StartRunOptions, fn func(ctx context.Context, run *RunHandle) error) error {
+func (c *SensuClient) Run(ctx context.Context, opts StartRunOptions, fn func(ctx context.Context, run *RunHandle) error) error {
 	run := c.StartRun(opts)
 	ctx = contextWithRun(ctx, run)
 
@@ -128,7 +128,7 @@ func (c *SenzuClient) Run(ctx context.Context, opts StartRunOptions, fn func(ctx
 // StartRun creates a RunHandle and emits agent.run.started.
 // Use this instead of Run() when you need to manage the run lifetime manually
 // (e.g., in serverless environments without context propagation).
-func (c *SenzuClient) StartRun(opts StartRunOptions) *RunHandle {
+func (c *SensuClient) StartRun(opts StartRunOptions) *RunHandle {
 	runID := opts.RunID
 	if runID == "" {
 		runID = uuid.New().String()
@@ -177,7 +177,7 @@ func (c *SenzuClient) StartRun(opts StartRunOptions) *RunHandle {
 
 // SpawnRun creates a child RunHandle, emits agent.spawned on the parent, and
 // agent.run.started for the child. The child shares trace_id and session_id.
-func (c *SenzuClient) SpawnRun(ctx context.Context, parent *RunHandle, opts SpawnRunOptions) *RunHandle {
+func (c *SensuClient) SpawnRun(ctx context.Context, parent *RunHandle, opts SpawnRunOptions) *RunHandle {
 	childRunID := opts.ChildRunID
 	if childRunID == "" {
 		childRunID = uuid.New().String()
@@ -235,12 +235,12 @@ func (c *SenzuClient) SpawnRun(ctx context.Context, parent *RunHandle, opts Spaw
 }
 
 // GetActiveRun returns the RunHandle stored in ctx by Run(), or nil.
-func (c *SenzuClient) GetActiveRun(ctx context.Context) *RunHandle {
+func (c *SensuClient) GetActiveRun(ctx context.Context) *RunHandle {
 	return RunFromContext(ctx)
 }
 
 // StartSession emits a session.started event and returns the session ID.
-func (c *SenzuClient) StartSession(opts StartSessionOptions) string {
+func (c *SensuClient) StartSession(opts StartSessionOptions) string {
 	sessionID := opts.SessionID
 	if sessionID == "" {
 		sessionID = uuid.New().String()
@@ -266,7 +266,7 @@ func (c *SenzuClient) StartSession(opts StartSessionOptions) string {
 }
 
 // ResumeSession emits a session.resumed event and returns the session ID.
-func (c *SenzuClient) ResumeSession(opts ResumeSessionOptions) string {
+func (c *SensuClient) ResumeSession(opts ResumeSessionOptions) string {
 	sessionID := opts.SessionID
 	if sessionID == "" {
 		sessionID = uuid.New().String()
@@ -293,7 +293,7 @@ func (c *SenzuClient) ResumeSession(opts ResumeSessionOptions) string {
 }
 
 // DeployPromptVersion emits a prompt.version.deployed event.
-func (c *SenzuClient) DeployPromptVersion(opts DeployPromptVersionOptions) {
+func (c *SensuClient) DeployPromptVersion(opts DeployPromptVersionOptions) {
 	ev := telemetryEvent{
 		"event_id":    uuid.New().String(),
 		"event_type":  EventPromptVersionDeployed,
@@ -318,19 +318,19 @@ func (c *SenzuClient) DeployPromptVersion(opts DeployPromptVersionOptions) {
 
 // Enqueue inserts a raw event map directly into the buffer.
 // Intended for integration layers that build events themselves.
-func (c *SenzuClient) Enqueue(ev map[string]any) {
+func (c *SensuClient) Enqueue(ev map[string]any) {
 	c.batcher.enqueue(telemetryEvent(ev))
 }
 
 // Flush immediately delivers all buffered events to the API.
 // Blocks until the POST completes or ctx is cancelled.
-func (c *SenzuClient) Flush(ctx context.Context) error {
+func (c *SensuClient) Flush(ctx context.Context) error {
 	return c.batcher.flush(ctx)
 }
 
 // Close flushes remaining events and stops the background goroutine.
 // Call via defer after creating the client.
-func (c *SenzuClient) Close(ctx context.Context) error {
+func (c *SensuClient) Close(ctx context.Context) error {
 	if err := c.Flush(ctx); err != nil {
 		return err
 	}
@@ -340,7 +340,7 @@ func (c *SenzuClient) Close(ctx context.Context) error {
 
 // notifyToolCall increments the loop-detection counter for toolName within runID.
 // Fires OnLoopDetected when the count reaches LoopThreshold.
-func (c *SenzuClient) notifyToolCall(runID, toolName string) {
+func (c *SensuClient) notifyToolCall(runID, toolName string) {
 	if c.onLoopDetected == nil {
 		return
 	}
@@ -359,7 +359,7 @@ func (c *SenzuClient) notifyToolCall(runID, toolName string) {
 	}
 }
 
-func (c *SenzuClient) clearRunLoopState(runID string) {
+func (c *SensuClient) clearRunLoopState(runID string) {
 	c.mu.Lock()
 	delete(c.runToolCallCounts, runID)
 	c.mu.Unlock()
