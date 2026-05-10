@@ -190,6 +190,30 @@ type RecordEvalScoreOptions struct {
 	LLMCallID        string
 }
 
+// FeedbackOptions are the options for the run-less, top-level
+// SensuClient.Feedback() helper. RunID is required because there is no
+// active run handle.
+type FeedbackOptions struct {
+	RunID     string   // required
+	Type      string   // required: "thumbs_up" | "thumbs_down" | "score" | "correction"
+	Score     *float64 // optional
+	Comment   string   // optional
+	EndUserID string   // optional
+}
+
+// ScoreOptions are the options for the run-less, top-level
+// SensuClient.Score() helper. RunID is required because there is no
+// active run handle.
+type ScoreOptions struct {
+	RunID            string  // required
+	Metric           string  // required
+	Score            float64 // required
+	EvaluatorID      string  // optional
+	ModelUsedForEval string  // optional
+	StepID           string  // optional
+	LLMCallID        string  // optional
+}
+
 // SpawnRunOptions creates a child run from a parent.
 type SpawnRunOptions struct {
 	ChildAgentID string
