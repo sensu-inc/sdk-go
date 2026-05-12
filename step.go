@@ -88,7 +88,7 @@ func (s *StepHandle) RecordLLM(opts RecordLLMOptions) {
 		ev["context_breakdown"] = opts.ContextBreakdown
 	}
 	if len(opts.MessagesSnapshot) > 0 {
-		ev["messages_snapshot"] = opts.MessagesSnapshot
+		ev["messages_snapshot"] = s.client.sanitizeMessagesSnapshot(opts.MessagesSnapshot)
 	}
 	if len(opts.ReferencedChunkIDs) > 0 {
 		ev["referenced_chunk_ids"] = opts.ReferencedChunkIDs
@@ -287,7 +287,7 @@ func TrackLLM[T any](ctx context.Context, step *StepHandle, fn func() (T, error)
 		}
 	}
 	if len(opts.MessagesSnapshot) > 0 {
-		completed["messages_snapshot"] = opts.MessagesSnapshot
+		completed["messages_snapshot"] = step.client.sanitizeMessagesSnapshot(opts.MessagesSnapshot)
 	}
 	if len(opts.ReferencedChunkIDs) > 0 {
 		completed["referenced_chunk_ids"] = opts.ReferencedChunkIDs

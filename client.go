@@ -12,15 +12,16 @@ import (
 
 // SensuClient is the main entry point for Sensu AI observability telemetry.
 type SensuClient struct {
-	apiKey             string
-	baseURL            string
-	agentID            string
-	orgID              string
-	disabled           bool
-	disableLivePricing bool
-	debugMode          bool
-	loopThreshold      int
-	onLoopDetected     func(toolName string, callCount int)
+	apiKey               string
+	baseURL              string
+	agentID              string
+	orgID                string
+	disabled             bool
+	disableLivePricing   bool
+	debugMode            bool
+	captureMessageBodies bool
+	loopThreshold        int
+	onLoopDetected       func(toolName string, callCount int)
 
 	batcher    *batcher
 	pricing    *pricingCache
@@ -76,18 +77,19 @@ func NewClient(opts ClientOptions) *SensuClient {
 	}
 
 	c := &SensuClient{
-		apiKey:             apiKey,
-		baseURL:            baseURL,
-		agentID:            agentID,
-		orgID:              orgID,
-		disabled:           opts.Disabled,
-		disableLivePricing: opts.DisableLivePricing,
-		debugMode:          opts.DebugMode,
-		loopThreshold:      loopThreshold,
-		onLoopDetected:     opts.OnLoopDetected,
-		pricing:            newPricingCache(),
-		httpClient:         &http.Client{Timeout: 15 * time.Second},
-		runToolCallCounts:  make(map[string]map[string]int),
+		apiKey:               apiKey,
+		baseURL:              baseURL,
+		agentID:              agentID,
+		orgID:                orgID,
+		disabled:             opts.Disabled,
+		disableLivePricing:   opts.DisableLivePricing,
+		debugMode:            opts.DebugMode,
+		captureMessageBodies: opts.CaptureMessageBodies,
+		loopThreshold:        loopThreshold,
+		onLoopDetected:       opts.OnLoopDetected,
+		pricing:              newPricingCache(),
+		httpClient:           &http.Client{Timeout: 15 * time.Second},
+		runToolCallCounts:    make(map[string]map[string]int),
 	}
 	c.batcher = newBatcher(apiKey, baseURL, batchSize, flushInterval,
 		opts.DebugMode, opts.Disabled)
@@ -99,6 +101,28 @@ func (c *SensuClient) AgentID() string { return c.agentID }
 
 // OrgID returns the configured org ID.
 func (c *SensuClient) OrgID() string { return c.orgID }
+
+// maxBodyChars matches the server-side z.string().max(65536) cap on
+// MessageSnapshotItemSchema. Bodies are trimmed eagerly so one oversize
+// message can't reject the whole batch.
+const maxBodyChars = 65_536
+
+// sanitizeMessagesSnapshot strips Body from every message snapshot
+// unless CaptureMessageBodies was set on the client, and caps body
+// length at maxBodyChars. Returns a defensive copy — never mutates the
+// caller's slice. See REPLAY_V1_PLAN.md §7.
+func (c *SensuClient) sanitizeMessagesSnapshot(in []MessageSnapshotItem) []MessageSnapshotItem {
+	out := make([]MessageSnapshotItem, len(in))
+	for i, m := range in {
+		out[i] = m
+		if !c.captureMessageBodies {
+			out[i].Body = ""
+		} else if len(out[i].Body) > maxBodyChars {
+			out[i].Body = out[i].Body[:maxBodyChars]
+		}
+	}
+	return out
+}
 
 // Run is the high-level context-propagating wrapper. It:
 //  1. Creates a RunHandle and emits agent.run.started

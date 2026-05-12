@@ -15,6 +15,12 @@ type ClientOptions struct {
 	DebugMode          bool
 	LoopThreshold      int // default 5; fires OnLoopDetected when a tool is called this many times
 	OnLoopDetected     func(toolName string, callCount int)
+	// CaptureMessageBodies — when true, raw message Bodies on
+	// MessagesSnapshot are forwarded to the API. The API masks PII via its
+	// shared pipeline at ingest; the raw form stays tenant-side and
+	// requires an audited unmask to read. Default false (privacy + back-compat).
+	// See planning/REPLAY_V1_PLAN.md §7.
+	CaptureMessageBodies bool
 }
 
 // StartRunOptions controls a new agent run.
@@ -46,10 +52,15 @@ type ContextBreakdown struct {
 
 // MessageSnapshotItem is one message entry in a context-window snapshot.
 type MessageSnapshotItem struct {
-	Role         string `json:"role"`
-	ToolName     string `json:"tool_name,omitempty"`
-	TokenCount   int    `json:"token_count"`
-	ContentHash  string `json:"content_hash,omitempty"`
+	Role        string `json:"role"`
+	ToolName    string `json:"tool_name,omitempty"`
+	TokenCount  int    `json:"token_count"`
+	ContentHash string `json:"content_hash,omitempty"`
+	// Body is the raw message text. Only forwarded to the API when the
+	// SensuClient was constructed with CaptureMessageBodies=true; the
+	// sanitizer in client.go strips it otherwise. Capped at 65,536 chars
+	// client-side to match the server schema. See REPLAY_V1_PLAN.md §7.
+	Body string `json:"body,omitempty"`
 }
 
 // TrackLLMOptions wraps an LLM call. Fn is provided at the call site via TrackLLM[T].
