@@ -2,10 +2,73 @@ package sensu
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// Tool I/O body capture (TOOL_IO_CAPTURE_PLAN.md §5.3 + §11.3 + §5.4).
+// 256 KB per field — wider than the LLM message-body cap because real
+// tool outputs (JSON manifests, HTML excerpts) routinely run past 64
+// KB. The Sensu API enforces the same cap defensively via
+// z.string().max(262144) on the tool.call.completed schema.
+const maxToolBodyChars = 262_144
+
+// Cross-SDK truncation marker (§5.4). Leading space intentional so the
+// marker lands cleanly on a word boundary in the inspector. Same byte
+// sequence as sdk-ts and sdk-python — keeps the on-the-wire shape
+// uniform across languages.
+const truncationMarker = " …[truncated]"
+
+// serializeToolBodiesForCapture serializes a tool call's input args
+// and result for transport when the caller set CaptureBodies=true.
+// Returns the body fields ready to splat into the tool.call.completed
+// event, plus an ok flag indicating whether either body should be
+// emitted at all:
+//
+//   - opt-out (CaptureBodies=false): returns (nil, false). Matches the
+//     v1 metadata-only behavior.
+//   - opt-in + both sides JSON-marshal cleanly: returns the input and
+//     output bodies, each ≤ 256 KB.
+//   - opt-in + json.Marshal fails for either side: returns (nil,
+//     false). Skip BOTH bodies — keeps the server-side
+//     "snapshotMissing" affordance coherent (§11.4 lean A). Never
+//     half-capture.
+//
+// Exported via the public wrapper [SerializeToolBodiesForCapture] so
+// unit tests can pin the cross-SDK invariants without standing up a
+// full client + run + step + test server.
+func serializeToolBodiesForCapture(args, result any, captureBodies bool) (input, output string, ok bool) {
+	if !captureBodies {
+		return "", "", false
+	}
+	inputBytes, err := json.Marshal(args)
+	if err != nil {
+		return "", "", false
+	}
+	outputBytes, err := json.Marshal(result)
+	if err != nil {
+		return "", "", false
+	}
+	return truncateToolBodyForTransport(string(inputBytes)),
+		truncateToolBodyForTransport(string(outputBytes)),
+		true
+}
+
+// SerializeToolBodiesForCapture is a public test hook over the private
+// helper. Returns ("", "", false) when bodies should not be emitted;
+// otherwise the truncated input and output body strings.
+func SerializeToolBodiesForCapture(args, result any, captureBodies bool) (input, output string, ok bool) {
+	return serializeToolBodiesForCapture(args, result, captureBodies)
+}
+
+func truncateToolBodyForTransport(s string) string {
+	if len(s) <= maxToolBodyChars {
+		return s
+	}
+	return s[:maxToolBodyChars-len(truncationMarker)] + truncationMarker
+}
 
 // StepHandle represents a single step within an agent run.
 // Created by RunHandle.StartStep(); ended by calling End().
@@ -321,14 +384,19 @@ func TrackTool[T any](ctx context.Context, step *StepHandle, fn func() (T, error
 		status = "error"
 	}
 
-	step.client.batcher.enqueue(mergeEvent(step.baseEvent(), telemetryEvent{
+	completed := mergeEvent(step.baseEvent(), telemetryEvent{
 		"event_type":        EventToolCallCompleted,
 		"tool_name":         opts.ToolName,
 		"tool_call_id":      toolCallID,
 		"latency_ms":        latencyMs,
 		"status":            status,
 		"output_size_bytes": estimateBytes(result),
-	}))
+	})
+	if inputBody, outputBody, ok := serializeToolBodiesForCapture(opts.Args, result, opts.CaptureBodies); ok {
+		completed["input_body"] = inputBody
+		completed["output_body"] = outputBody
+	}
+	step.client.batcher.enqueue(completed)
 
 	step.client.notifyToolCall(step.RunID, opts.ToolName)
 
