@@ -108,6 +108,27 @@ type RecordLLMOptions struct {
 type TrackToolOptions struct {
 	ToolName string
 	RetryOf  string // tool_call_id of a prior failed attempt (links retry chain)
+
+	// Args is the tool-call input. When CaptureBodies is true, Args is
+	// JSON-marshaled and shipped on tool.call.completed as input_body;
+	// the awaited result of fn becomes output_body. Server runs the PII
+	// pipeline on each at ingest, so raw bodies never leave the tenant
+	// boundary unmasked. Default behavior (CaptureBodies false) keeps
+	// the v1 shape — neither body field is emitted.
+	Args any
+
+	// CaptureBodies, when true, opts the call into Tool I/O body
+	// capture (TOOL_IO_CAPTURE_PLAN.md §5.3). Default OFF (the Go bool
+	// zero value); opt-in per call so storage and PII exposure are
+	// explicit decisions per §11.2. Same posture as sdk-ts and
+	// sdk-python.
+	//
+	// Serialization is best-effort: if encoding/json.Marshal returns
+	// an error for either side (channels, complex numbers, function
+	// values, cyclic structures via MarshalJSON, etc.) both bodies are
+	// skipped so the inspector's "snapshotMissing" affordance stays
+	// coherent (§11.4). Never half-capture.
+	CaptureBodies bool
 }
 
 // TrackRetrievalOptions wraps a vector-store retrieval call.
