@@ -246,6 +246,33 @@ type ScoreOptions struct {
 	LLMCallID        string  // optional
 }
 
+// CandidateConfig is the candidate config registered under an agent
+// version, used by the eval-gated CI/CD flow (§5.2). Mirrors the API
+// shape: SystemPrompt required, Model optional (defaults to the sampled
+// run's source model at gate time).
+type CandidateConfig struct {
+	SystemPrompt string `json:"systemPrompt"`
+	Model        string `json:"model,omitempty"`
+}
+
+// RegisterAgentVersionOptions are the options for the run-less, top-level
+// SensuClient.RegisterAgentVersion() helper.
+type RegisterAgentVersionOptions struct {
+	AgentID string          // required — customer-facing agent name
+	SHA     string          // required — opaque identifier, usually a git commit SHA
+	Config  CandidateConfig // required
+}
+
+// AgentVersion is the server response shape for a registered agent
+// version.
+type AgentVersion struct {
+	ID        string          `json:"id"`
+	AgentID   string          `json:"agentId"`
+	SHA       string          `json:"sha"`
+	Config    CandidateConfig `json:"config"`
+	CreatedAt string          `json:"createdAt"`
+}
+
 // SpawnRunOptions creates a child run from a parent.
 type SpawnRunOptions struct {
 	ChildAgentID string
