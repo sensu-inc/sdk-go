@@ -1,5 +1,53 @@
 # `sdk-go` changelog
 
+## 0.5.0 — 2026-05-20
+
+### Added — context-bound tracking shortcuts (Phase 2 PR 1)
+
+Four new free-function helpers that auto-manage step lifecycle when an
+active run is in context. Removes the boilerplate of `StartStep` →
+`defer step.End()` → call the underlying `Track*` for the common
+"track one tool/retrieval/embedding/guardrail call" case.
+
+```go
+err := client.Run(ctx, sensu.StartRunOptions{}, func(ctx context.Context, _ *sensu.RunHandle) error {
+    result, err := sensu.TrackToolCtx(ctx, func() (string, error) {
+        return mySearchTool(query)
+    }, sensu.TrackToolOptions{ToolName: "search"})
+    _ = result
+    return err
+})
+```
+
+New helpers (all in the top-level `sensu` package):
+
+- `sensu.TrackToolCtx[T](ctx, fn, opts)` — wraps `TrackTool[T]`
+- `sensu.TrackRetrievalCtx[T](ctx, fn, opts)` — wraps `TrackRetrieval[T]`
+- `sensu.TrackEmbeddingCtx[T](ctx, fn, opts)` — wraps `TrackEmbedding[T]`
+- `sensu.TrackGuardrailCtx(ctx, fn, opts)` — wraps `TrackGuardrail`
+
+Each:
+1. Pulls the active `RunHandle` from `ctx` via `RunFromContext`
+2. Creates a transient step (`StartStep` with sensible default name +
+   type from the options)
+3. Calls the existing underlying generic
+4. Auto-ends the step on return (via `defer step.End(ctx)`)
+
+**Fall-through behavior:** if no active run is in `ctx`, the wrapper
+just calls `fn` directly with no telemetry — matches the no-run
+behavior in the existing trinity SDKs. No errors raised; cost of
+forgetting `client.Run()` is just missing observability for that call.
+
+**Why "Ctx" suffix?** Go can't put type parameters on methods, so
+TypeScript-style `client.trackTool(...)` isn't possible. The free-
+function pattern with a `Ctx` suffix follows the established Go
+convention (`http.NewRequest` vs `http.NewRequestWithContext`); the
+existing step-bound generics (`TrackTool[T](ctx, step, fn, opts)`) are
+unchanged.
+
+7 new tests covering all four shortcuts, error propagation, and the
+no-run fall-through. Full suite: 76/76 (was 69).
+
 ## 0.4.0 — 2026-05-20
 
 ### Changed — pricing fallback removed; live API is the only path
