@@ -2,7 +2,11 @@ package sensu_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -97,13 +101,57 @@ func TestTrackLLMErrorSetsStatusError(t *testing.T) {
 }
 
 func TestTrackLLMCostEstimation(t *testing.T) {
-	c, batches, ts := makeClientWithServer(t)
+	// Post-pivot (v0.4.0): the SDK no longer ships a bundled pricing
+	// table. Cost estimation requires the live /api/v1/pricing/models
+	// endpoint, so this test stands up its own httptest server that
+	// serves both the events ingest path and the pricing path.
+	var mu sync.Mutex
+	var batches [][]map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/v1/events":
+			var body struct {
+				Events []map[string]any `json:"events"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			mu.Lock()
+			batches = append(batches, body.Events)
+			mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"processed": len(body.Events)})
+
+		case r.URL.Path == "/api/v1/pricing/models/anthropic/claude-sonnet-4-6":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"provider":               "anthropic",
+				"model":                  "claude-sonnet-4-6",
+				"source":                 "estimated",
+				"inputPricePer1mTokens":  3.0,
+				"outputPricePer1mTokens": 15.0,
+				"currency":               "USD",
+			})
+
+		default:
+			http.Error(w, "unexpected path: "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
 	defer ts.Close()
+
+	c := sensu.NewClient(sensu.ClientOptions{
+		APIKey:          "test-key",
+		BaseURL:         ts.URL,
+		AgentID:         "test-agent",
+		BatchSize:       100,     // large batch so we control flush
+		FlushIntervalMs: 999_999, // disable auto-flush
+		// DisableLivePricing: false (default) — we want the live path
+	})
 
 	ctx := context.Background()
 	run := c.StartRun(sensu.StartRunOptions{})
 	step := run.StartStep(sensu.StartStepOptions{})
-	*batches = nil
 
 	type fakeResponse struct {
 		Usage struct {
@@ -122,7 +170,7 @@ func TestTrackLLMCostEstimation(t *testing.T) {
 	c.Flush(ctx)
 
 	// claude-sonnet-4-6: $3/1M input + $15/1M output = $18 total
-	for _, e := range allEvents(*batches) {
+	for _, e := range allEvents(batches) {
 		if e["event_type"] == sensu.EventLLMRequestCompleted {
 			cost, ok := e["cost_usd_estimate"].(float64)
 			if !ok {
