@@ -1,5 +1,55 @@
 # `sdk-go` changelog
 
+## 0.6.0 — 2026-05-20
+
+### Added — OpenAI integration (`integrations/openai`)
+
+New sibling of `integrations/anthropic`. Auto-tracks every
+`Chat.Completions.New` call as a Sensu LLM telemetry event with the
+same wire shape — `llm.request.started` on dispatch, `llm.request.completed`
+on return (or failure) with token usage + latency + provider + model.
+
+```go
+import (
+    openaiSDK "github.com/openai/openai-go"
+    sopenai  "github.com/sensu-inc/sdk-go/integrations/openai"
+)
+
+sensuClient := sensu.New(sensu.ClientOptions{FromEnv: true})
+openaiClient := openaiSDK.NewClient()
+wrapped := sopenai.Wrap(&openaiClient, sopenai.WrapOptions{Client: sensuClient})
+
+err := sensuClient.Run(ctx, sensu.StartRunOptions{}, func(ctx context.Context, _ *sensu.RunHandle) error {
+    resp, err := wrapped.Chat.Completions.New(ctx, openaiSDK.ChatCompletionNewParams{...})
+    // ...
+})
+```
+
+Mirrors the Anthropic wrapper: same `WrapOptions` shape (`Client`,
+`RunHandle`, `DefaultProvider`), same standalone-mode behavior when
+no run is active, same error-path emission. The differences are:
+
+- Underlying call path is `Chat.Completions.New` instead of
+  `Messages.New`.
+- Token usage maps from `PromptTokens` / `CompletionTokens` /
+  `PromptTokensDetails.CachedTokens`.
+- Default provider label is `"openai"`. Override to `"azure-openai"`
+  or similar when routing through OpenAI-compatible vendors.
+
+`integrations/openai` is a separate Go module under the `sdk-go` repo
+so the OpenAI SDK dependency stays opt-in — the root module is
+dependency-light for customers who don't use OpenAI.
+
+5 new tests covering: happy-path (started + completed + token usage
++ cached_tokens + parent_span_id chain), error-path (status="error"
++ no usage fields), standalone (no run) emits orphan IDs without
+started, default `DefaultProvider="openai"`, custom DefaultProvider
+override (Azure / Groq / Fireworks use case).
+
+Release workflow updated to run `go test ./...` inside
+`integrations/openai` alongside the existing Anthropic integration
+test step.
+
 ## 0.5.0 — 2026-05-20
 
 ### Added — context-bound tracking shortcuts (Phase 2 PR 1)
