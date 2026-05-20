@@ -12,9 +12,29 @@ type ClientOptions struct {
 	FlushIntervalMs    int  // default 2000
 	Disabled           bool
 	DisableLivePricing bool
-	DebugMode          bool
-	LoopThreshold      int // default 5; fires OnLoopDetected when a tool is called this many times
-	OnLoopDetected     func(toolName string, callCount int)
+	// PricingCacheTTLMs — how long the SDK caches resolved per-(provider,
+	// model) pricing before refetching from the Sensu API. After expiry
+	// the next ResolvePricing-driven call hits the live endpoint and
+	// replaces the cached entry.
+	//
+	// Defaults: zero-value (field left unset) → 1 hour (3_600_000). To
+	// disable caching entirely, set this to NoPricingCache (-1) — this
+	// sentinel exists because Go can't distinguish "not set" from
+	// "explicitly 0" on a primitive int. Set to a positive value to
+	// override the default.
+	//
+	// Long-running services should keep this short enough that pricing
+	// changes propagate within the freshness window dashboards depend
+	// on; short-lived processes (Lambda, CLI) effectively get fresh
+	// pricing per invocation regardless.
+	//
+	// Parity with sdk-ts (pricingCacheTtlMs, 0 = disable) and sdk-python
+	// (pricing_cache_ttl_ms, 0 = disable). Go uses the NoPricingCache
+	// sentinel instead of 0 due to the zero-value caveat above.
+	PricingCacheTTLMs int
+	DebugMode         bool
+	LoopThreshold     int // default 5; fires OnLoopDetected when a tool is called this many times
+	OnLoopDetected    func(toolName string, callCount int)
 	// CaptureMessageBodies — when true, raw message Bodies on
 	// MessagesSnapshot are forwarded to the API. The API masks PII via its
 	// shared pipeline at ingest; the raw form stays tenant-side and

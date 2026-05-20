@@ -34,7 +34,14 @@
 package sensu
 
 // Version is the current SDK version.
-const Version = "0.6.0"
+const Version = "0.6.1"
+
+// NoPricingCache is the sentinel value for ClientOptions.PricingCacheTTLMs
+// that disables pricing caching entirely (every tracked LLM call fetches
+// pricing fresh from the live API). Use this instead of 0 because Go's
+// primitive int zero-value collides with "field not set" — 0 in the
+// options struct means "use the default 1 hour."
+const NoPricingCache = -1
 
 // New is a convenience alias for NewClient.
 func New(opts ClientOptions) *SensuClient {

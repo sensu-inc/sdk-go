@@ -1,5 +1,46 @@
 # `sdk-go` changelog
 
+## 0.6.1 — 2026-05-20
+
+### Added — pricing cache TTL
+
+New `ClientOptions.PricingCacheTTLMs` field. Default **1 hour**
+(3_600_000). After expiry the next `resolvePricing`-driven call
+hits the live API and replaces the cached entry. Set to the new
+exported `NoPricingCache` sentinel (-1) to disable caching
+entirely.
+
+**Why the sentinel:** Go's primitive `int` zero-value collides
+with "field not set" in struct literals. Setting `PricingCacheTTLMs: 0`
+would be ambiguous; using `NoPricingCache` makes the intent
+explicit and stays parity-equivalent with sdk-ts
+(`pricingCacheTtlMs: 0`) and sdk-python (`pricing_cache_ttl_ms: 0`).
+
+Closes v1.1 follow-on #1 from
+[`[DONE]_SDK_CONSOLIDATION_PLAN.md` §9](https://github.com/sensu-inc/sensu/blob/main/planning/%5BDONE%5D_SDK_CONSOLIDATION_PLAN.md).
+
+Internal changes:
+- `pricingCacheEntry` struct holds rates + `fetchedAt time.Time`.
+- `pricingCache` gains `ttl time.Duration` + injectable `now func() time.Time`.
+- New `newPricingCacheWithClock(ttl, now)` test-only constructor
+  for deterministic TTL assertions.
+- `cache.get(key)` returns miss when `now() - fetchedAt >= ttl`,
+  or whenever `ttl <= 0` (the disabled case).
+
+5 new tests in `pricing_test.go`:
+- TTL expiry triggers refetch
+- Rate updates propagate across the expiry boundary (with a
+  second-server-response that simulates the customer updating
+  per-org pricing mid-process)
+- TTL=0 disables caching (5 calls = 5 fetches)
+- Per-(provider, model) TTL isolation
+- `ClientOptions.PricingCacheTTLMs` sentinel handling table:
+  unset (0)→1h, NoPricingCache (-1)→disabled, positive→that value
+
+Full suite: 81/81 pass. No regressions.
+
+Patch bump: 0.6.0 → 0.6.1.
+
 ## Unreleased
 
 ### Docs — add README; document the framework-integration gap
