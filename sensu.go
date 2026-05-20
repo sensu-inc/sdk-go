@@ -34,7 +34,7 @@
 package sensu
 
 // Version is the current SDK version.
-const Version = "0.5.0"
+const Version = "0.6.0"
 
 // New is a convenience alias for NewClient.
 func New(opts ClientOptions) *SensuClient {
