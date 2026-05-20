@@ -1,5 +1,29 @@
 # `sdk-go` changelog
 
+## Unreleased
+
+### Docs — add README; document the framework-integration gap
+
+Adds a top-level `README.md` (the repo had none before). Sections:
+
+- Quick start
+- Tracking primitives table (`Run` / `Track*` / `Track*Ctx`)
+- **Framework integrations** — what ships (Anthropic, OpenAI) + an
+  honest "Not available — and why" section for LangChain, LangGraph,
+  and CrewAI: those frameworks have **no Go ports**, so there's
+  nothing to wrap. Documents the manual-instrumentation pattern via
+  the existing `Track*` primitives for customers using `langchaingo`
+  or rolling their own agent loop.
+- Other features index (multi-agent, sessions, prompts, body
+  capture, run-less helpers, pricing, loop detection)
+
+Phase 2 PR 4 of the platform `SDK_CONSOLIDATION_PLAN.md`. Closes
+the "Go has only Anthropic, sdk-ts/sdk-python have 4 framework
+handlers" gap via documentation rather than building wrappers
+around frameworks that don't exist in Go.
+
+No code changes; no version bump.
+
 ## 0.6.0 — 2026-05-20
 
 ### Added — OpenAI integration (`integrations/openai`)
