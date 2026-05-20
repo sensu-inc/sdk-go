@@ -76,6 +76,21 @@ func NewClient(opts ClientOptions) *SensuClient {
 		loopThreshold = 5
 	}
 
+	// PricingCacheTTLMs sentinel handling — see types.go and the
+	// NoPricingCache constant for full rationale. Summary:
+	//   0  (field unset)          → default 1 hour
+	//   NoPricingCache (-1)       → disable caching
+	//   any positive integer      → use that value
+	var pricingTTL time.Duration
+	switch {
+	case opts.PricingCacheTTLMs == 0:
+		pricingTTL = time.Hour
+	case opts.PricingCacheTTLMs == NoPricingCache:
+		pricingTTL = 0
+	default:
+		pricingTTL = time.Duration(opts.PricingCacheTTLMs) * time.Millisecond
+	}
+
 	c := &SensuClient{
 		apiKey:               apiKey,
 		baseURL:              baseURL,
@@ -87,7 +102,7 @@ func NewClient(opts ClientOptions) *SensuClient {
 		captureMessageBodies: opts.CaptureMessageBodies,
 		loopThreshold:        loopThreshold,
 		onLoopDetected:       opts.OnLoopDetected,
-		pricing:              newPricingCache(),
+		pricing:              newPricingCache(pricingTTL),
 		httpClient:           &http.Client{Timeout: 15 * time.Second},
 		runToolCallCounts:    make(map[string]map[string]int),
 	}

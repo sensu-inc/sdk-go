@@ -8,36 +8,67 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 )
 
-// pricingCache is a session-scoped, read-heavy cache of resolved model
-// pricing. It also tracks which (provider, model) pairs have already
-// emitted a failure-warning log line so repeated misses don't spam the
-// logs.
-type pricingCache struct {
-	mu     sync.RWMutex
-	store  map[string][2]float64 // "provider:model" → [inputPer1M, outputPer1M]
-	warned map[string]struct{}   // "provider:model" → already-warned set
+// pricingCacheEntry stores a resolved rate pair alongside when it was
+// fetched, so TTL checks are O(1) on read.
+type pricingCacheEntry struct {
+	value     [2]float64
+	fetchedAt time.Time
 }
 
-func newPricingCache() *pricingCache {
+// pricingCache is a session-scoped, read-heavy cache of resolved model
+// pricing. Entries older than `ttl` are treated as cache misses on
+// read. The cache also tracks which (provider, model) pairs have
+// already emitted a failure-warning log line so repeated misses don't
+// spam the logs.
+type pricingCache struct {
+	mu     sync.RWMutex
+	store  map[string]pricingCacheEntry // "provider:model" → entry
+	warned map[string]struct{}          // "provider:model" → already-warned set
+	ttl    time.Duration
+	now    func() time.Time // injectable for tests
+}
+
+func newPricingCache(ttl time.Duration) *pricingCache {
+	return newPricingCacheWithClock(ttl, time.Now)
+}
+
+// newPricingCacheWithClock — test-only constructor allowing
+// deterministic time travel via the supplied clock.
+func newPricingCacheWithClock(ttl time.Duration, now func() time.Time) *pricingCache {
 	return &pricingCache{
-		store:  make(map[string][2]float64),
+		store:  make(map[string]pricingCacheEntry),
 		warned: make(map[string]struct{}),
+		ttl:    ttl,
+		now:    now,
 	}
 }
 
+// get returns a cached entry only if it exists AND hasn't expired. When
+// ttl is zero or negative, caching is effectively disabled (every read
+// is a miss).
 func (c *pricingCache) get(key string) ([2]float64, bool) {
+	if c.ttl <= 0 {
+		return [2]float64{}, false
+	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	v, ok := c.store[key]
-	return v, ok
+	entry, ok := c.store[key]
+	if !ok {
+		return [2]float64{}, false
+	}
+	if c.now().Sub(entry.fetchedAt) >= c.ttl {
+		return [2]float64{}, false
+	}
+	return entry.value, true
 }
 
 func (c *pricingCache) set(key string, v [2]float64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.store[key] = v
+	c.store[key] = pricingCacheEntry{value: v, fetchedAt: c.now()}
 }
 
 // warnOnce returns true if this (provider, model) is being warned about for
@@ -54,7 +85,7 @@ func (c *pricingCache) warnOnce(key string) bool {
 
 // resolvePricing returns [inputPer1M, outputPer1M] for a model.
 //
-// Priority: session cache → live API → [0, 0] (with warning).
+// Priority: session cache (gated by ttl) → live API → [0, 0] (with warning).
 //
 // Per SDK_CONSOLIDATION_PLAN.md §3c, the SDK no longer ships a bundled
 // pricing table — customers are assumed online; the live
@@ -65,6 +96,11 @@ func (c *pricingCache) warnOnce(key string) bool {
 // once per (provider, model) per client lifetime. The server's ingest
 // pipeline reconciles cost from llm_calls + the catalog at query time,
 // so dashboards stay correct even when an SDK call sends 0.
+//
+// Cache TTL behavior (v0.6.1+): cached entries are valid for the
+// cache's ttl (set via ClientOptions.PricingCacheTTLMs, default 1 hour).
+// After expiry the next call refetches and replaces the entry. Set TTL
+// to 0 in ClientOptions to disable caching entirely.
 func resolvePricing(
 	ctx context.Context,
 	httpClient *http.Client,

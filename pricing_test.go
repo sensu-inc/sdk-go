@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // captureLogs redirects the standard logger to a buffer for the duration
@@ -67,7 +68,7 @@ func TestResolvePricing_LiveSuccessCachesAndReuses(t *testing.T) {
 		"inputPricePer1mTokens":  15.0,
 		"outputPricePer1mTokens": 75.0,
 	})
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	first := resolvePricing(
 		context.Background(), client, baseURL, "test-key",
@@ -96,7 +97,7 @@ func TestResolvePricing_LiveSuccessCachesAndReuses(t *testing.T) {
 func TestResolvePricing_404ReturnsZerosAndWarnsOnce(t *testing.T) {
 	readLogs := captureLogs(t)
 	baseURL, client, _ := makePricingServer(t, http.StatusNotFound, nil)
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	first := resolvePricing(
 		context.Background(), client, baseURL, "test-key",
@@ -125,7 +126,7 @@ func TestResolvePricing_404ReturnsZerosAndWarnsOnce(t *testing.T) {
 func TestResolvePricing_5xxReturnsZerosAndWarns(t *testing.T) {
 	readLogs := captureLogs(t)
 	baseURL, client, _ := makePricingServer(t, http.StatusInternalServerError, nil)
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	result := resolvePricing(
 		context.Background(), client, baseURL, "test-key",
@@ -143,7 +144,7 @@ func TestResolvePricing_NetworkErrorReturnsZerosAndWarns(t *testing.T) {
 	readLogs := captureLogs(t)
 	// Use a transport that always errors.
 	client := &http.Client{Transport: errorTransport{}}
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	result := resolvePricing(
 		context.Background(), client, "http://localhost:0", "test-key",
@@ -171,7 +172,7 @@ func TestResolvePricing_200WithNullRatesTreatedAsMiss(t *testing.T) {
 		"inputPricePer1mTokens":  nil,
 		"outputPricePer1mTokens": nil,
 	})
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	result := resolvePricing(
 		context.Background(), client, baseURL, "test-key",
@@ -192,7 +193,7 @@ func TestResolvePricing_200WithNullRatesTreatedAsMiss(t *testing.T) {
 func TestResolvePricing_DisableLiveSkipsFetchAndWarns(t *testing.T) {
 	readLogs := captureLogs(t)
 	baseURL, client, calls := makePricingServer(t, http.StatusOK, nil)
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	result := resolvePricing(
 		context.Background(), client, baseURL, "test-key",
@@ -212,7 +213,7 @@ func TestResolvePricing_DisableLiveSkipsFetchAndWarns(t *testing.T) {
 func TestResolvePricing_DisabledClientSkipsFetchAndWarns(t *testing.T) {
 	readLogs := captureLogs(t)
 	baseURL, client, calls := makePricingServer(t, http.StatusOK, nil)
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	result := resolvePricing(
 		context.Background(), client, baseURL, "test-key",
@@ -232,7 +233,7 @@ func TestResolvePricing_DisabledClientSkipsFetchAndWarns(t *testing.T) {
 func TestResolvePricing_MissingApiKeySkipsFetchAndWarns(t *testing.T) {
 	readLogs := captureLogs(t)
 	baseURL, client, calls := makePricingServer(t, http.StatusOK, nil)
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	result := resolvePricing(
 		context.Background(), client, baseURL, "", /* apiKey */
@@ -256,7 +257,7 @@ func TestResolvePricing_MissingApiKeySkipsFetchAndWarns(t *testing.T) {
 func TestResolvePricing_DifferentModelsWarnIndependently(t *testing.T) {
 	readLogs := captureLogs(t)
 	baseURL, client, _ := makePricingServer(t, http.StatusNotFound, nil)
-	cache := newPricingCache()
+	cache := newPricingCache(time.Hour)
 
 	for i := 0; i < 3; i++ {
 		resolvePricing(
@@ -302,6 +303,169 @@ func TestEstimateCost(t *testing.T) {
 			// Use a small tolerance for float comparisons.
 			if diff := got - tt.want; diff > 1e-9 || diff < -1e-9 {
 				t.Errorf("estimateCost = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Cache TTL — uses newPricingCacheWithClock for deterministic time travel
+// ---------------------------------------------------------------------------
+
+// fakeClock returns a controllable time.Time source. now() returns the
+// current value of *now; advance via the closure.
+func fakeClock() (now func() time.Time, advance func(time.Duration)) {
+	t0 := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
+	cur := t0
+	now = func() time.Time { return cur }
+	advance = func(d time.Duration) { cur = cur.Add(d) }
+	return
+}
+
+func TestPricingCache_RefetchesAfterTTLExpires(t *testing.T) {
+	baseURL, client, calls := makePricingServer(t, http.StatusOK, map[string]any{
+		"inputPricePer1mTokens":  15.0,
+		"outputPricePer1mTokens": 75.0,
+	})
+	now, advance := fakeClock()
+	cache := newPricingCacheWithClock(60*time.Second, now)
+
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	if *calls != 1 {
+		t.Fatalf("first call: expected 1 fetch, got %d", *calls)
+	}
+
+	// Within TTL → cache hit.
+	advance(59 * time.Second)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	if *calls != 1 {
+		t.Errorf("at t=59s (within TTL): expected 1 fetch, got %d", *calls)
+	}
+
+	// Past TTL → refetch.
+	advance(2 * time.Second)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	if *calls != 2 {
+		t.Errorf("at t=61s (past TTL): expected 2 fetches, got %d", *calls)
+	}
+}
+
+func TestPricingCache_PicksUpUpdatedRatesOnRefetch(t *testing.T) {
+	now, advance := fakeClock()
+	cache := newPricingCacheWithClock(1*time.Second, now)
+
+	// First server returns one rate.
+	var step int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		step++
+		if step == 1 {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"inputPricePer1mTokens":  15.0,
+				"outputPricePer1mTokens": 75.0,
+			})
+			return
+		}
+		// After expiry, server has updated rates (e.g. customer
+		// registered a discount via POST /api/v1/pricing/org-models).
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"inputPricePer1mTokens":  12.0,
+			"outputPricePer1mTokens": 60.0,
+		})
+	}))
+	defer ts.Close()
+
+	before := resolvePricing(context.Background(), ts.Client(), ts.URL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	if before != [2]float64{15, 75} {
+		t.Fatalf("before: expected [15 75], got %v", before)
+	}
+
+	advance(2 * time.Second) // past 1s TTL
+	after := resolvePricing(context.Background(), ts.Client(), ts.URL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	if after != [2]float64{12, 60} {
+		t.Errorf("after refetch: expected [12 60], got %v", after)
+	}
+}
+
+func TestPricingCache_TTLZeroDisablesCaching(t *testing.T) {
+	baseURL, client, calls := makePricingServer(t, http.StatusOK, map[string]any{
+		"inputPricePer1mTokens":  15.0,
+		"outputPricePer1mTokens": 75.0,
+	})
+	cache := newPricingCache(0)
+
+	for i := 0; i < 5; i++ {
+		resolvePricing(context.Background(), client, baseURL, "test-key",
+			"anthropic", "claude-opus-4-7", cache, false, false)
+	}
+	if *calls != 5 {
+		t.Errorf("TTL=0 should disable caching: expected 5 fetches, got %d", *calls)
+	}
+}
+
+func TestPricingCache_TTLAppliesPerProviderModelIndependently(t *testing.T) {
+	baseURL, client, calls := makePricingServer(t, http.StatusOK, map[string]any{
+		"inputPricePer1mTokens":  1.0,
+		"outputPricePer1mTokens": 2.0,
+	})
+	now, advance := fakeClock()
+	cache := newPricingCacheWithClock(60*time.Second, now)
+
+	// Prime both keys.
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"openai", "gpt-4o", cache, false, false)
+	if *calls != 2 {
+		t.Fatalf("priming: expected 2 fetches, got %d", *calls)
+	}
+
+	// Within TTL → both cache hits.
+	advance(30 * time.Second)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"openai", "gpt-4o", cache, false, false)
+	if *calls != 2 {
+		t.Errorf("within TTL: expected 2 fetches, got %d", *calls)
+	}
+
+	// Past TTL → both refetch.
+	advance(60 * time.Second)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"anthropic", "claude-opus-4-7", cache, false, false)
+	resolvePricing(context.Background(), client, baseURL, "test-key",
+		"openai", "gpt-4o", cache, false, false)
+	if *calls != 4 {
+		t.Errorf("past TTL: expected 4 fetches, got %d", *calls)
+	}
+}
+
+func TestClientOptions_PricingCacheTTL_SentinelHandling(t *testing.T) {
+	tests := []struct {
+		name        string
+		optsTTLMs   int
+		wantTTL     time.Duration
+	}{
+		{"unset (zero value) → default 1 hour", 0, time.Hour},
+		{"NoPricingCache → disabled (zero duration)", NoPricingCache, 0},
+		{"custom positive → that value", 60_000, 60 * time.Second},
+		{"explicit 1ms → 1ms", 1, time.Millisecond},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewClient(ClientOptions{
+				APIKey: "k", BaseURL: "http://x", AgentID: "a",
+				DisableLivePricing: true,
+				BatchSize:          100, FlushIntervalMs: 999_999,
+				PricingCacheTTLMs: tt.optsTTLMs,
+			})
+			if c.pricing.ttl != tt.wantTTL {
+				t.Errorf("ttl = %v, want %v", c.pricing.ttl, tt.wantTTL)
 			}
 		})
 	}
